@@ -24,6 +24,8 @@ if (!fs.existsSync(authDir)) {
 }
 
 let remindersInitialized = false;
+let latestQR = null;
+let isConnected = false;
 
 const groupCache = new Map();
 
@@ -100,15 +102,19 @@ async function startBot() {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr && !usePairingCode) {
-      console.log('\n📱 Lütfen aşağıdaki QR kodu WhatsApp ile taratın:');
-      qrcode.generate(qr, { small: true });
-      const qrPath = path.join(__dirname, '..', 'qr.png');
-      QRCodeImg.toFile(qrPath, qr, { width: 350 }).catch(() => {});
-      console.log('🖼️ Ayrıca QR kod "qr.png" olarak kaydedildi! İsterseniz klasördeki resmi açıp da taratabilirsiniz.\n');
+    if (qr) {
+      latestQR = qr;
+      if (!usePairingCode) {
+        console.log('\n📱 Lütfen aşağıdaki QR kodu WhatsApp ile taratın:');
+        qrcode.generate(qr, { small: true });
+        const qrPath = path.join(__dirname, '..', 'qr.png');
+        QRCodeImg.toFile(qrPath, qr, { width: 350 }).catch(() => {});
+        console.log('🖼️ Ayrıca QR kod "qr.png" olarak kaydedildi! İsterseniz klasördeki resmi açıp da taratabilirsiniz.\n');
+      }
     }
 
     if (connection === 'close') {
+      isConnected = false;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
@@ -124,6 +130,8 @@ async function startBot() {
       console.log('Otomatik yeniden bağlanılıyor (2 sn)...');
       setTimeout(startBot, 2000);
     } else if (connection === 'open') {
+      isConnected = true;
+      latestQR = null;
       console.log('\n✅ WhatsApp Bağlantısı Başarıyla Kuruldu!');
       console.log('Bot aktif ve mesajları dinliyor... 🚀\n');
 
@@ -515,11 +523,49 @@ async function startBot() {
   return sock;
 }
 
-// Bulut sunucuları (Render, Koyeb vb.) için hafif sağlık kontrol sunucusu
+// Bulut sunucuları (Render, Koyeb vb.) için web sunucusu (QR'ı webde gösterir ve uyumayı engeller)
 const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-  res.end('🥗 WhatsApp Diet Bot 7/24 Aktif!');
+http.createServer(async (req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+
+  if (isConnected) {
+    res.end(`
+      <div style="font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:50px;max-width:600px;margin:auto;">
+        <h1 style="color:#25D366;font-size:32px;margin-bottom:10px;">✅ WhatsApp Botu 7/24 Aktif!</h1>
+        <p style="font-size:18px;color:#333;line-height:1.6;">
+          <b>"Hayatımı Düzene Sokuyorum"</b> grubu için mesajları dinliyor ve hatırlatıcılar devrede.
+        </p>
+        <div style="background:#e8f5e9;padding:15px;border-radius:10px;margin-top:20px;color:#2e7d32;">
+          Render üzerinde kesintisiz çalışıyor. 🚀
+        </div>
+      </div>
+    `);
+  } else if (latestQR) {
+    try {
+      const qrDataUrl = await QRCodeImg.toDataURL(latestQR, { width: 320 });
+      res.end(`
+        <div style="font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:40px;max-width:600px;margin:auto;">
+          <h2 style="color:#128C7E;">🥗 WhatsApp Diyet & Kapışma Botu</h2>
+          <p style="font-size:16px;color:#555;">Telefonunuzdan WhatsApp ➔ Bağlı Cihazlar ➔ Cihaz Bağla diyerek aşağıdaki kodu taratın:</p>
+          <div style="margin:20px 0;">
+            <img src="${qrDataUrl}" style="border:5px solid #25D366;border-radius:15px;box-shadow:0 8px 24px rgba(0,0,0,0.12);" />
+          </div>
+          <p style="color:#888;font-size:13px;">Sayfa 20 saniyede bir otomatik yenilenir.</p>
+          <meta http-equiv="refresh" content="20">
+        </div>
+      `);
+    } catch (_) {
+      res.end('QR hazırlanıyor, lütfen 5 saniye sonra sayfayı yenileyin...');
+    }
+  } else {
+    res.end(`
+      <div style="font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:50px;max-width:600px;margin:auto;">
+        <h2 style="color:#333;">⏳ WhatsApp Botu Başlatılıyor...</h2>
+        <p style="color:#666;">Lütfen birkaç saniye bekleyin, sayfa otomatik yenilenecek.</p>
+        <meta http-equiv="refresh" content="6">
+      </div>
+    `);
+  }
 }).listen(PORT, () => {
   console.log(`🌐 Web sağlık servisi ${PORT} portunda dinlemede.`);
 });
