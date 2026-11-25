@@ -523,6 +523,15 @@ async function startBot() {
   return sock;
 }
 
+// Çökmeleri önle (Node.js sürecinin kapanmasını engelle)
+process.on('uncaughtException', (err) => {
+  console.error('🛡️ Hata yakalandı (Çökme engellendi):', err.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('🛡️ Promise reddi yakalandı (Çökme engellendi):', reason);
+});
+
 // Bulut sunucuları (Render, Koyeb vb.) için web sunucusu (QR'ı webde gösterir ve uyumayı engeller)
 const PORT = process.env.PORT || 3000;
 http.createServer(async (req, res) => {
@@ -568,6 +577,18 @@ http.createServer(async (req, res) => {
   }
 }).listen(PORT, () => {
   console.log(`🌐 Web sağlık servisi ${PORT} portunda dinlemede.`);
+
+  // Render Free Tier Uyku Önleyici (Keep-Alive Self-Ping)
+  const renderUrl = process.env.RENDER_EXTERNAL_URL;
+  if (renderUrl) {
+    console.log(`📡 Render uyku önleyici otomatik ping aktif: ${renderUrl}`);
+    setInterval(async () => {
+      try {
+        await fetch(renderUrl);
+        console.log('💓 Keep-alive ping gönderildi (Render uyanık tutuluyor).');
+      } catch (_) {}
+    }, 8 * 60 * 1000); // 8 dakikada bir kendi kendine ping atarak uyumayı engeller
+  }
 });
 
 // Botu başlat
